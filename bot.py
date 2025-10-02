@@ -1,16 +1,15 @@
 import os
 import requests
 import sqlite3
-import asyncio
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, JobQueue
 
 # --- Переменные окружения ---
 TOKEN = os.getenv("BOT_TOKEN")
-PORT = int(os.environ.get("PORT", 5000))  # Render автоматически задаёт порт
+PORT = int(os.environ.get("PORT", 5000))
 WEBHOOK_URL = f"https://srv-d3f2uss9c44c73eca990.onrender.com/{TOKEN}"
 
-# --- База данных для отслеживания предметов ---
+# --- База данных ---
 conn = sqlite3.connect("tracked.db", check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS tracked (user_id INTEGER, item TEXT, threshold INTEGER)")
@@ -75,27 +74,25 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ошибка при получении цены.")
         print("Ошибка /price:", e)
 
-# --- Периодическая проверка цен ---
-async def check_prices(app: Application):
-    while True:
-        cursor.execute("SELECT user_id, item, threshold FROM tracked")
-        rows = cursor.fetchall()
-        for user_id, item, threshold in rows:
-            try:
-                r = requests.get(API_URL.format(item.replace(" ", "%20")))
-                data = r.json()
-                if "listings" in data and data["listings"]:
-                    min_price = min(l["price"] for l in data["listings"])
-                    if min_price < threshold:
-                        await app.bot.send_message(
-                            chat_id=user_id,
-                            text=f"⚡ {item} найден за {min_price} (ниже {threshold})!"
-                        )
-            except Exception as e:
-                print("Ошибка check_prices:", e)
-        await asyncio.sleep(300)  # проверка каждые 5 минут
+# --- Периодическая проверка цен через JobQueue ---
+async def check_prices_job(context: ContextTypes.DEFAULT_TYPE):
+    cursor.execute("SELECT user_id, item, threshold FROM tracked")
+    rows = cursor.fetchall()
+    for user_id, item, threshold in rows:
+        try:
+            r = requests.get(API_URL.format(item.replace(" ", "%20")))
+            data = r.json()
+            if "listings" in data and data["listings"]:
+                min_price = min(l["price"] for l in data["listings"])
+                if min_price < threshold:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=f"⚡ {item} найден за {min_price} (ниже {threshold})!"
+                    )
+        except Exception as e:
+            print("Ошибка check_prices:", e)
 
-# --- Создание приложения и регистрация команд ---
+# --- Создание приложения ---
 app = Application.builder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("track", track))
@@ -103,10 +100,10 @@ app.add_handler(CommandHandler("untrack", untrack))
 app.add_handler(CommandHandler("list", list_items))
 app.add_handler(CommandHandler("price", price))
 
-# --- Запуск периодической проверки ---
-asyncio.create_task(check_prices(app))
+# --- Запуск периодической проверки каждые 5 минут ---
+app.job_queue.run_repeating(check_prices_job, interval=300, first=0)
 
-# --- Запуск бота через webhook для Render ---
+# --- Запуск webhook для Render ---
 app.run_webhook(
     listen="0.0.0.0",
     port=PORT,
