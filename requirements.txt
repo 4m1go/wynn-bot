@@ -1,2 +1,4 @@
-python-telegram-bot[webhooks,job-queue]==20.3
-requests
+python-telegram-bot[webhooks]==20.3
+aiohttp
+aiosqlite
+python-dotenv
