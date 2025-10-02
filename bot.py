@@ -104,7 +104,7 @@ app.add_handler(CommandHandler("list", list_items))
 app.add_handler(CommandHandler("price", price))
 
 # --- Запуск периодической проверки ---
-asyncio.get_event_loop().create_task(check_prices(app))
+asyncio.create_task(check_prices(app))
 
 # --- Запуск бота через webhook для Render ---
 app.run_webhook(
