@@ -6,7 +6,8 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Получаем токен из переменных окружения (Render → Environment Variables)
-TOKEN = os.getenv("8474800678:AAGAzsHHO6rlWhaO2DF54X_q0B9rF_n3QZ8")
+TOKEN = os.getenv("BOT_TOKEN")
+
 
 # база для отслеживаемых предметов
 conn = sqlite3.connect("tracked.db", check_same_thread=False)
