@@ -5,10 +5,12 @@ import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Получаем токен из переменных окружения
+# --- Переменные окружения ---
 TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.environ.get("PORT", 5000))  # Render автоматически задаёт порт
+WEBHOOK_URL = f"https://srv-d3f2uss9c44c73eca990.onrender.com/{TOKEN}"
 
-# база для отслеживаемых предметов
+# --- База данных для отслеживания предметов ---
 conn = sqlite3.connect("tracked.db", check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS tracked (user_id INTEGER, item TEXT, threshold INTEGER)")
@@ -16,6 +18,7 @@ conn.commit()
 
 API_URL = "https://api.wynncraft.com/v3/market/item/{}"
 
+# --- Обработчики команд ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Используй:\n"
@@ -64,10 +67,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
             avg_price = sum(prices) // len(prices)
             max_price = max(prices)
             await update.message.reply_text(
-                f"💰 {item}:\n"
-                f"Минимум: {min_price}\n"
-                f"Средняя: {avg_price}\n"
-                f"Максимум: {max_price}"
+                f"💰 {item}:\nМинимум: {min_price}\nСредняя: {avg_price}\nМаксимум: {max_price}"
             )
         else:
             await update.message.reply_text(f"❌ Нет данных о {item}")
@@ -75,6 +75,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ошибка при получении цены.")
         print("Ошибка /price:", e)
 
+# --- Периодическая проверка цен ---
 async def check_prices(app: Application):
     while True:
         cursor.execute("SELECT user_id, item, threshold FROM tracked")
@@ -94,13 +95,21 @@ async def check_prices(app: Application):
                 print("Ошибка check_prices:", e)
         await asyncio.sleep(300)  # проверка каждые 5 минут
 
-if __name__ == "__main__":
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("track", track))
-    app.add_handler(CommandHandler("untrack", untrack))
-    app.add_handler(CommandHandler("list", list_items))
-    app.add_handler(CommandHandler("price", price))
+# --- Создание приложения и регистрация команд ---
+app = Application.builder().token(TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("track", track))
+app.add_handler(CommandHandler("untrack", untrack))
+app.add_handler(CommandHandler("list", list_items))
+app.add_handler(CommandHandler("price", price))
 
-    asyncio.get_event_loop().create_task(check_prices(app))
-    app.run_polling()
+# --- Запуск периодической проверки ---
+asyncio.get_event_loop().create_task(check_prices(app))
+
+# --- Запуск бота через webhook для Render ---
+app.run_webhook(
+    listen="0.0.0.0",
+    port=PORT,
+    url_path=TOKEN,
+    webhook_url=WEBHOOK_URL
+)
